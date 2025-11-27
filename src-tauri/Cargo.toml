@@ -1,0 +1,59 @@
+[package]
+name = "metabrain"
+version = "0.1.0"
+description = "Metamind - Personal Knowledge Assistant"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["shell-open", "dialog-open", "fs-read-file", "fs-read-dir", "path-all"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client for Ollama
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# File system watching
+notify = "6"
+notify-debouncer-mini = "0.4"
+
+# Markdown parsing
+pulldown-cmark = "0.10"
+
+# YAML frontmatter parsing
+serde_yaml = "0.9"
+
+# Content hashing
+sha2 = "0.10"
+
+# UUID generation
+uuid = { version = "1", features = ["v4"] }
+
+# Async traits
+async-trait = "0.1"
+
+# Futures utilities
+futures = "0.3"
+
+# Directory utilities
+dirs = "5"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]
