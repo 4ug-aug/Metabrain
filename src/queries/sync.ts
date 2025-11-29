@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getSyncStatus, syncVault, getArtifacts } from "../api/tauri";
+import { getSyncStatus, syncVault, getArtifacts, deleteArtifact } from "../api/tauri";
 
 export const syncKeys = {
   all: ["sync"] as const,
@@ -32,6 +32,17 @@ export function useSyncVault() {
     mutationFn: (vaultPath: string) => syncVault(vaultPath),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: syncKeys.all });
+    },
+  });
+}
+
+export function useDeleteArtifact() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => deleteArtifact(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: syncKeys.artifacts() });
     },
   });
 }

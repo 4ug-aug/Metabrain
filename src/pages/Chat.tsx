@@ -139,7 +139,7 @@ export function Chat() {
             <Sparkles className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="font-semibold">Metamind</h1>
+            <h1 className="font-semibold">Metabrain</h1>
             <p className="text-xs text-muted-foreground">
               Ask questions about your knowledge base
             </p>
@@ -227,7 +227,7 @@ function EmptyState() {
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-4">
         <Sparkles className="h-8 w-8 text-primary" />
       </div>
-      <h2 className="text-xl font-semibold mb-2">Welcome to Metamind</h2>
+      <h2 className="text-xl font-semibold mb-2">Welcome to Metabrain</h2>
       <p className="text-muted-foreground max-w-md mb-6">
         Your personal AI assistant for exploring your knowledge base. Ask questions
         about your Obsidian notes and get intelligent answers.

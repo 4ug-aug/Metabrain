@@ -1,4 +1,4 @@
-// Metamind Type Definitions
+// Metabrain Type Definitions
 
 export interface ChatMessage {
   id: number;

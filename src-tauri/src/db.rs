@@ -17,6 +17,7 @@ pub enum DbError {
 pub type DbResult<T> = Result<T, DbError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Artifact {
     pub id: String,
     pub path: String,
@@ -70,7 +71,7 @@ pub struct Database {
 impl Database {
     pub fn new(app_data_dir: PathBuf) -> DbResult<Self> {
         std::fs::create_dir_all(&app_data_dir).ok();
-        let db_path = app_data_dir.join("metamind.db");
+        let db_path = app_data_dir.join("metabrain.db");
         let conn = Connection::open(db_path)?;
         
         let db = Self {

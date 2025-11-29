@@ -1,4 +1,15 @@
 import { onSyncComplete, onSyncProgress, selectFolder, syncVault } from "@/api/tauri";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,20 +24,23 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { useArtifacts, useDeleteArtifact } from "@/queries/sync";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSyncStore } from "@/stores/syncStore";
-import { Settings as SettingsType } from "@/types";
+import { Artifact, Settings as SettingsType } from "@/types";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
   AlertCircle,
   Brain,
   CheckCircle,
   Database,
+  FileText,
   FolderOpen,
   Loader2,
   RefreshCw,
   Save,
   Server,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -36,7 +50,10 @@ export function Settings() {
   const { status, setStatus } = useSyncStore();
   const [isSaving, setIsSaving] = useState(false);
   const [localSettings, setLocalSettings] = useState<SettingsType>(settings);
-  const [artifactCount, setArtifactCount] = useState(0);
+  
+  // Use TanStack Query for artifacts
+  const { data: artifacts = [], refetch: refetchArtifacts } = useArtifacts();
+  const deleteArtifactMutation = useDeleteArtifact();
 
   // Load settings from backend on mount
   useEffect(() => {
@@ -45,11 +62,6 @@ export function Settings() {
         setLocalSettings(backendSettings);
         setSettings(backendSettings);
       })
-      .catch(console.error);
-
-    // Get artifact count
-    invoke<unknown[]>("get_artifacts")
-      .then((artifacts) => setArtifactCount(artifacts.length))
       .catch(console.error);
   }, [setSettings]);
 
@@ -70,10 +82,8 @@ export function Settings() {
 
     onSyncComplete((payload) => {
       setStatus(payload);
-      // Refresh artifact count
-      invoke<unknown[]>("get_artifacts")
-        .then((artifacts) => setArtifactCount(artifacts.length))
-        .catch(console.error);
+      // Refresh artifacts
+      refetchArtifacts();
       toast.success("Sync completed successfully!");
     }).then((unsub) => {
       unsubComplete = unsub;
@@ -83,7 +93,7 @@ export function Settings() {
       unsubProgress?.();
       unsubComplete?.();
     };
-  }, [setStatus]);
+  }, [setStatus, refetchArtifacts]);
 
   const handleSelectFolder = async () => {
     try {
@@ -124,6 +134,16 @@ export function Settings() {
       console.error("Failed to sync vault:", error);
       toast.error("Failed to sync vault");
       setStatus({ isRunning: false, error: String(error) });
+    }
+  };
+
+  const handleDeleteArtifact = async (artifact: Artifact) => {
+    try {
+      await deleteArtifactMutation.mutateAsync(artifact.id);
+      toast.success(`Removed "${getFileName(artifact.path)}"`);
+    } catch (error) {
+      console.error("Failed to delete artifact:", error);
+      toast.error("Failed to remove document");
     }
   };
 
@@ -193,7 +213,7 @@ export function Settings() {
                     </span>
                   </div>
                   <Badge variant="secondary">
-                    {artifactCount} documents indexed
+                    {artifacts.length} documents indexed
                   </Badge>
                 </div>
 
@@ -239,6 +259,44 @@ export function Settings() {
                   )}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Indexed Documents */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Indexed Documents
+                </div>
+                <Badge variant="secondary">{artifacts.length} files</Badge>
+              </CardTitle>
+              <CardDescription>
+                View and manage documents in your knowledge base
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {artifacts.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No documents indexed yet</p>
+                  <p className="text-xs mt-1">Sync your vault to add documents</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[300px] pr-4">
+                  <div className="space-y-2">
+                    {artifacts.map((artifact) => (
+                      <ArtifactItem
+                        key={artifact.id}
+                        artifact={artifact}
+                        onDelete={handleDeleteArtifact}
+                        isDeleting={deleteArtifactMutation.isPending}
+                      />
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
             </CardContent>
           </Card>
 
@@ -351,5 +409,73 @@ export function Settings() {
         </div>
       </div>
     </ScrollArea>
+  );
+}
+
+// Helper to extract filename from path
+function getFileName(path: string): string {
+  return path.split("/").pop() || path.split("\\").pop() || path;
+}
+
+// Helper to format timestamp
+function formatDate(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+// Artifact item component
+interface ArtifactItemProps {
+  artifact: Artifact;
+  onDelete: (artifact: Artifact) => void;
+  isDeleting: boolean;
+}
+
+function ArtifactItem({ artifact, onDelete, isDeleting }: ArtifactItemProps) {
+  const fileName = getFileName(artifact.path);
+
+  return (
+    <div className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+      <FileText className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-sm truncate">{fileName}</p>
+        <p className="text-xs text-muted-foreground truncate">{artifact.path}</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          Indexed: {formatDate(artifact.indexedAt)}
+        </p>
+      </div>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+            disabled={isDeleting}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove "{fileName}" from your knowledge base. The original
+              file will not be deleted. You can re-sync to add it back.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => onDelete(artifact)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

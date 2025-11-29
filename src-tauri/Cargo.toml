@@ -1,7 +1,7 @@
 [package]
 name = "metabrain"
 version = "0.1.0"
-description = "Metamind - Personal Knowledge Assistant"
+description = "Metabrain - Personal Knowledge Assistant"
 authors = ["you"]
 edition = "2021"
 

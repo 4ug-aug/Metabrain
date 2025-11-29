@@ -38,6 +38,10 @@ export async function getArtifacts(): Promise<Artifact[]> {
   return invoke<Artifact[]>("get_artifacts");
 }
 
+export async function deleteArtifact(id: string): Promise<void> {
+  return invoke("delete_artifact", { id });
+}
+
 // Dialog Commands
 export async function selectFolder(): Promise<string | null> {
   const selected = await open({

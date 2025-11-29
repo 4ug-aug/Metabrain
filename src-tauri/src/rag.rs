@@ -21,7 +21,7 @@ pub enum RagError {
 
 pub type RagResult<T> = Result<T, RagError>;
 
-const SYSTEM_PROMPT: &str = r#"You are Metamind, a helpful AI assistant that answers questions based on the user's personal knowledge base.
+const SYSTEM_PROMPT: &str = r#"You are Metabrain, a helpful AI assistant that answers questions based on the user's personal knowledge base.
 
 Use MAINLY the provided context to answer questions. If the context doesn't contain relevant information, say so clearly but attempt to answer the user's question.
 

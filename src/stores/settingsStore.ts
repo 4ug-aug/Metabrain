@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { Settings, DEFAULT_SETTINGS } from "../types";
+import { DEFAULT_SETTINGS, Settings } from "../types";
 
 interface SettingsState {
   settings: Settings;
@@ -19,7 +19,7 @@ export const useSettingsStore = create<SettingsState>()(
       resetSettings: () => set({ settings: DEFAULT_SETTINGS }),
     }),
     {
-      name: "metamind-settings",
+      name: "metabrain-settings",
     }
   )
 );

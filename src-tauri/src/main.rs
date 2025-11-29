@@ -56,7 +56,30 @@ async fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
 
 #[tauri::command]
 async fn save_settings(state: State<'_, AppState>, settings: Settings) -> Result<(), String> {
-    state.db.save_settings(&settings).map_err(|e| e.to_string())
+    // Save settings to database
+    state.db.save_settings(&settings).map_err(|e| e.to_string())?;
+    
+    // Update RAG engine with new settings
+    let mut rag_engine = state.rag_engine.lock().await;
+    rag_engine.update_settings(
+        state.db.clone(),
+        settings.ollama_endpoint.clone(),
+        settings.ollama_model.clone(),
+        settings.embedding_model.clone(),
+    );
+    
+    // Also update ingest engine if it exists
+    let mut ingest_engine_guard = state.ingest_engine.lock().await;
+    if ingest_engine_guard.is_some() {
+        let engine = IngestEngine::new(
+            state.db.clone(),
+            settings.ollama_endpoint,
+            settings.embedding_model,
+        );
+        *ingest_engine_guard = Some(engine);
+    }
+    
+    Ok(())
 }
 
 // === Chat Commands ===
@@ -146,6 +169,15 @@ async fn get_artifacts(state: State<'_, AppState>) -> Result<Vec<Artifact>, Stri
     state.db.get_all_artifacts().map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn delete_artifact(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    // Delete embeddings first (foreign key constraint)
+    state.db.delete_embeddings_by_artifact(&id).map_err(|e| e.to_string())?;
+    // Delete the artifact
+    state.db.delete_artifact(&id).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn main() {
     env_logger::init();
     
@@ -193,6 +225,7 @@ fn main() {
             sync_vault,
             get_sync_status,
             get_artifacts,
+            delete_artifact,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
