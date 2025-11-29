@@ -5,18 +5,24 @@ mod db;
 mod embedding;
 mod ingest;
 mod llm;
+mod outline;
 mod parser;
 mod rag;
 mod vector;
 mod watcher;
 
-use db::{Database, ChatMessage, Settings, Artifact};
+use db::{Artifact, Database, ChatMessage, Embedding, Settings};
+use embedding::EmbeddingClient;
 use ingest::IngestEngine;
+use outline::OutlineClient;
+use parser::MarkdownParser;
 use rag::RagEngine;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, State};
 use tokio::sync::Mutex as TokioMutex;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 // Application state
 pub struct AppState {
@@ -178,6 +184,153 @@ async fn delete_artifact(state: State<'_, AppState>, id: String) -> Result<(), S
     Ok(())
 }
 
+// === Outline Sync Command ===
+
+#[tauri::command]
+async fn sync_outline(
+    app_handle: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SyncStatus, String> {
+    let settings = state.db.get_settings().map_err(|e| e.to_string())?;
+    
+    // Create Outline client
+    let client = OutlineClient::new(
+        settings.outline_base_url.clone(),
+        settings.outline_api_key.clone(),
+    ).map_err(|e| e.to_string())?;
+    
+    // Create embedding client
+    let embedding_client = EmbeddingClient::new(
+        settings.ollama_endpoint.clone(),
+        settings.embedding_model.clone(),
+    );
+    
+    let parser = MarkdownParser::new();
+    
+    // Emit initial progress
+    let _ = app_handle.emit_all("outline-sync-progress", serde_json::json!({
+        "processed": 0,
+        "total": 0,
+        "currentDocument": "Fetching document list..."
+    }));
+    
+    // Fetch all documents from Outline
+    let documents = client.list_all_documents().await.map_err(|e| e.to_string())?;
+    let total = documents.len();
+    
+    log::info!("Found {} documents in Outline", total);
+    
+    let mut processed = 0;
+    let mut errors = Vec::new();
+    
+    for doc in documents {
+        // Emit progress
+        let _ = app_handle.emit_all("outline-sync-progress", serde_json::json!({
+            "processed": processed,
+            "total": total,
+            "currentDocument": &doc.title
+        }));
+        
+        // Fetch full document content
+        match client.get_document(&doc.id).await {
+            Ok(full_doc) => {
+                let path = format!("outline://{}", doc.id);
+                
+                // Parse the markdown content
+                match parser.parse_content(&full_doc.text) {
+                    Ok(parsed) => {
+                        // Check if document has changed
+                        let should_update = match state.db.get_artifact_by_path(&path) {
+                            Ok(Some(existing)) => existing.content_hash != parsed.content_hash,
+                            Ok(None) => true,
+                            Err(_) => true,
+                        };
+                        
+                        if should_update {
+                            // Delete old embeddings if exists
+                            if let Ok(Some(existing)) = state.db.get_artifact_by_path(&path) {
+                                let _ = state.db.delete_embeddings_by_artifact(&existing.id);
+                            }
+                            
+                            // Create artifact
+                            let artifact_id = Uuid::new_v4().to_string();
+                            let now = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap()
+                                .as_secs() as i64;
+                            
+                            let artifact = Artifact {
+                                id: artifact_id.clone(),
+                                path: path.clone(),
+                                last_modified: now,
+                                content_hash: parsed.content_hash,
+                                indexed_at: now,
+                            };
+                            
+                            if let Err(e) = state.db.upsert_artifact(&artifact) {
+                                errors.push(format!("Failed to save artifact {}: {}", doc.title, e));
+                                continue;
+                            }
+                            
+                            // Generate embeddings for each chunk
+                            for (chunk_index, chunk_content) in parsed.chunks.iter().enumerate() {
+                                match embedding_client.embed(chunk_content).await {
+                                    Ok(embedding_vec) => {
+                                        let embedding = Embedding {
+                                            id: format!("{}#{}", artifact_id, chunk_index),
+                                            artifact_id: artifact_id.clone(),
+                                            chunk_index: chunk_index as i32,
+                                            content: chunk_content.clone(),
+                                            embedding: embedding_vec,
+                                        };
+                                        
+                                        if let Err(e) = state.db.insert_embedding(&embedding) {
+                                            log::warn!("Failed to save embedding for {}: {}", doc.title, e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to generate embedding for {}: {}", doc.title, e);
+                                    }
+                                }
+                            }
+                            
+                            log::info!("Indexed Outline document: {}", doc.title);
+                        } else {
+                            log::debug!("Skipping unchanged document: {}", doc.title);
+                        }
+                    }
+                    Err(e) => {
+                        errors.push(format!("Failed to parse {}: {}", doc.title, e));
+                    }
+                }
+            }
+            Err(e) => {
+                errors.push(format!("Failed to fetch {}: {}", doc.title, e));
+            }
+        }
+        
+        processed += 1;
+    }
+    
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    
+    let status = SyncStatus {
+        is_running: false,
+        total_files: total,
+        processed_files: processed,
+        last_sync_at: Some(now),
+        error: if errors.is_empty() { None } else { Some(errors.join("; ")) },
+    };
+    
+    // Emit completion
+    let _ = app_handle.emit_all("outline-sync-complete", &status);
+    
+    Ok(status)
+}
+
 fn main() {
     env_logger::init();
     
@@ -226,6 +379,7 @@ fn main() {
             get_sync_status,
             get_artifacts,
             delete_artifact,
+            sync_outline,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

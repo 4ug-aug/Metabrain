@@ -1,4 +1,4 @@
-import { onSyncComplete, onSyncProgress, selectFolder, syncVault } from "@/api/tauri";
+import { onOutlineSyncComplete, onOutlineSyncProgress, onSyncComplete, onSyncProgress, selectFolder, syncVault } from "@/api/tauri";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,16 +24,19 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { useArtifacts, useDeleteArtifact } from "@/queries/sync";
+import { useArtifacts, useDeleteArtifact, useSyncOutline } from "@/queries/sync";
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useSyncStore } from "@/stores/syncStore";
 import { Artifact, Settings as SettingsType } from "@/types";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
   AlertCircle,
+  BookOpen,
   Brain,
   CheckCircle,
   Database,
+  Eye,
+  EyeOff,
   FileText,
   FolderOpen,
   Loader2,
@@ -50,10 +53,22 @@ export function Settings() {
   const { status, setStatus } = useSyncStore();
   const [isSaving, setIsSaving] = useState(false);
   const [localSettings, setLocalSettings] = useState<SettingsType>(settings);
+  const [showApiKey, setShowApiKey] = useState(false);
+  
+  // Outline sync state
+  const [outlineSyncStatus, setOutlineSyncStatus] = useState({
+    isRunning: false,
+    processed: 0,
+    total: 0,
+    currentDocument: "",
+    lastSyncAt: null as number | null,
+    error: null as string | null,
+  });
   
   // Use TanStack Query for artifacts
   const { data: artifacts = [], refetch: refetchArtifacts } = useArtifacts();
   const deleteArtifactMutation = useDeleteArtifact();
+  const syncOutlineMutation = useSyncOutline();
 
   // Load settings from backend on mount
   useEffect(() => {
@@ -69,6 +84,8 @@ export function Settings() {
   useEffect(() => {
     let unsubProgress: (() => void) | undefined;
     let unsubComplete: (() => void) | undefined;
+    let unsubOutlineProgress: (() => void) | undefined;
+    let unsubOutlineComplete: (() => void) | undefined;
 
     onSyncProgress((payload) => {
       setStatus({
@@ -89,9 +106,42 @@ export function Settings() {
       unsubComplete = unsub;
     });
 
+    onOutlineSyncProgress((payload) => {
+      setOutlineSyncStatus((prev) => ({
+        ...prev,
+        isRunning: true,
+        processed: payload.processed,
+        total: payload.total,
+        currentDocument: payload.currentDocument,
+      }));
+    }).then((unsub) => {
+      unsubOutlineProgress = unsub;
+    });
+
+    onOutlineSyncComplete((payload) => {
+      setOutlineSyncStatus({
+        isRunning: false,
+        processed: payload.processedFiles,
+        total: payload.totalFiles,
+        currentDocument: "",
+        lastSyncAt: payload.lastSyncAt,
+        error: payload.error,
+      });
+      refetchArtifacts();
+      if (payload.error) {
+        toast.error("Outline sync completed with errors");
+      } else {
+        toast.success("Outline sync completed successfully!");
+      }
+    }).then((unsub) => {
+      unsubOutlineComplete = unsub;
+    });
+
     return () => {
       unsubProgress?.();
       unsubComplete?.();
+      unsubOutlineProgress?.();
+      unsubOutlineComplete?.();
     };
   }, [setStatus, refetchArtifacts]);
 
@@ -144,6 +194,22 @@ export function Settings() {
     } catch (error) {
       console.error("Failed to delete artifact:", error);
       toast.error("Failed to remove document");
+    }
+  };
+
+  const handleSyncOutline = async () => {
+    if (!localSettings.outlineApiKey) {
+      toast.error("Please enter your Outline API key first");
+      return;
+    }
+
+    try {
+      setOutlineSyncStatus((prev) => ({ ...prev, isRunning: true, error: null }));
+      await syncOutlineMutation.mutateAsync();
+    } catch (error) {
+      console.error("Failed to sync Outline:", error);
+      toast.error("Failed to sync Outline");
+      setOutlineSyncStatus((prev) => ({ ...prev, isRunning: false, error: String(error) }));
     }
   };
 
@@ -381,6 +447,144 @@ export function Settings() {
                 <p className="text-xs text-muted-foreground">
                   The model used for creating vector embeddings of your documents
                 </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Outline Wiki Integration */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5" />
+                Outline Wiki
+              </CardTitle>
+              <CardDescription>
+                Connect to your Outline Wiki to index documentation
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="outline-base-url">Outline API URL</Label>
+                <Input
+                  id="outline-base-url"
+                  value={localSettings.outlineBaseUrl}
+                  onChange={(e) =>
+                    setLocalSettings((prev) => ({
+                      ...prev,
+                      outlineBaseUrl: e.target.value,
+                    }))
+                  }
+                  placeholder="https://app.getoutline.com/api"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The API URL for your Outline instance (use default for cloud-hosted)
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="outline-api-key">API Key</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="outline-api-key"
+                    type={showApiKey ? "text" : "password"}
+                    value={localSettings.outlineApiKey}
+                    onChange={(e) =>
+                      setLocalSettings((prev) => ({
+                        ...prev,
+                        outlineApiKey: e.target.value,
+                      }))
+                    }
+                    placeholder="Enter your Outline API key"
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                  >
+                    {showApiKey ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Create an API key in Outline under Settings → API & Apps
+                </p>
+              </div>
+
+              {/* Outline Sync Status */}
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {outlineSyncStatus.isRunning ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    ) : outlineSyncStatus.lastSyncAt ? (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <span className="text-sm font-medium">
+                      {outlineSyncStatus.isRunning
+                        ? "Syncing Outline..."
+                        : outlineSyncStatus.lastSyncAt
+                        ? "Synced"
+                        : "Not synced"}
+                    </span>
+                  </div>
+                  <Badge variant="secondary">
+                    {artifacts.filter((a) => a.path.startsWith("outline://")).length} docs
+                  </Badge>
+                </div>
+
+                {outlineSyncStatus.isRunning && outlineSyncStatus.total > 0 && (
+                  <div className="space-y-2">
+                    <Progress
+                      value={(outlineSyncStatus.processed / outlineSyncStatus.total) * 100}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Processing {outlineSyncStatus.processed} of {outlineSyncStatus.total}{" "}
+                      documents
+                      {outlineSyncStatus.currentDocument && (
+                        <span className="block truncate mt-1">
+                          Current: {outlineSyncStatus.currentDocument}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+
+                {outlineSyncStatus.lastSyncAt && !outlineSyncStatus.isRunning && (
+                  <p className="text-xs text-muted-foreground">
+                    Last synced:{" "}
+                    {new Date(outlineSyncStatus.lastSyncAt * 1000).toLocaleString()}
+                  </p>
+                )}
+
+                {outlineSyncStatus.error && (
+                  <p className="text-xs text-destructive">{outlineSyncStatus.error}</p>
+                )}
+
+                <Button
+                  onClick={handleSyncOutline}
+                  disabled={outlineSyncStatus.isRunning || !localSettings.outlineApiKey}
+                  className="w-full"
+                  variant="outline"
+                >
+                  {outlineSyncStatus.isRunning ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Syncing Outline...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-4 w-4" />
+                      Sync Outline
+                    </>
+                  )}
+                </Button>
               </div>
             </CardContent>
           </Card>

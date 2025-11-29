@@ -28,6 +28,8 @@ export interface Settings {
   ollamaEndpoint: string;
   ollamaModel: string;
   embeddingModel: string;
+  outlineApiKey: string;
+  outlineBaseUrl: string;
 }
 
 export interface SyncStatus {
@@ -51,5 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ollamaEndpoint: "http://localhost:11434",
   ollamaModel: "llama3.2",
   embeddingModel: "nomic-embed-text",
+  outlineApiKey: "",
+  outlineBaseUrl: "https://app.getoutline.com/api",
 };
 

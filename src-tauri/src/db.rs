@@ -51,6 +51,8 @@ pub struct Settings {
     pub ollama_endpoint: String,
     pub ollama_model: String,
     pub embedding_model: String,
+    pub outline_api_key: String,
+    pub outline_base_url: String,
 }
 
 impl Default for Settings {
@@ -60,6 +62,8 @@ impl Default for Settings {
             ollama_endpoint: "http://localhost:11434".to_string(),
             ollama_model: "llama3.2".to_string(),
             embedding_model: "nomic-embed-text".to_string(),
+            outline_api_key: String::new(),
+            outline_base_url: "https://app.getoutline.com/api".to_string(),
         }
     }
 }
@@ -329,6 +333,8 @@ impl Database {
                 "ollama_endpoint" => settings.ollama_endpoint = row.1,
                 "ollama_model" => settings.ollama_model = row.1,
                 "embedding_model" => settings.embedding_model = row.1,
+                "outline_api_key" => settings.outline_api_key = row.1,
+                "outline_base_url" => settings.outline_base_url = row.1,
                 _ => {}
             }
         }
@@ -344,6 +350,8 @@ impl Database {
             ("ollama_endpoint", &settings.ollama_endpoint),
             ("ollama_model", &settings.ollama_model),
             ("embedding_model", &settings.embedding_model),
+            ("outline_api_key", &settings.outline_api_key),
+            ("outline_base_url", &settings.outline_base_url),
         ];
 
         for (key, value) in pairs {

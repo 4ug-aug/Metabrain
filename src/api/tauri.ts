@@ -42,6 +42,11 @@ export async function deleteArtifact(id: string): Promise<void> {
   return invoke("delete_artifact", { id });
 }
 
+// Outline Sync Commands
+export async function syncOutline(): Promise<SyncStatus> {
+  return invoke<SyncStatus>("sync_outline");
+}
+
 // Dialog Commands
 export async function selectFolder(): Promise<string | null> {
   const selected = await open({
@@ -62,6 +67,12 @@ export type SyncProgressPayload = {
   processed: number;
   total: number;
   currentFile: string;
+};
+
+export type OutlineSyncProgressPayload = {
+  processed: number;
+  total: number;
+  currentDocument: string;
 };
 
 export function onStreamChunk(
@@ -92,6 +103,23 @@ export function onSyncError(
   callback: (payload: { error: string }) => void
 ): Promise<() => void> {
   return listen<{ error: string }>("sync-error", (event) => {
+    callback(event.payload);
+  });
+}
+
+// Outline Sync Event Listeners
+export function onOutlineSyncProgress(
+  callback: (payload: OutlineSyncProgressPayload) => void
+): Promise<() => void> {
+  return listen<OutlineSyncProgressPayload>("outline-sync-progress", (event) => {
+    callback(event.payload);
+  });
+}
+
+export function onOutlineSyncComplete(
+  callback: (payload: SyncStatus) => void
+): Promise<() => void> {
+  return listen<SyncStatus>("outline-sync-complete", (event) => {
     callback(event.payload);
   });
 }
